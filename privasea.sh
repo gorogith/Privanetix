@@ -12,10 +12,8 @@ NC='\033[0m'
 setup_docker_permissions() {
     if ! groups | grep -q docker; then
         echo -e "\n${YELLOW}Adding user to docker group...${NC}"
-        sudo usermod -aG docker $USER
-        echo -e "${GREEN}Please log out and log back in for the changes to take effect.${NC}"
-        echo -e "${YELLOW}After logging back in, run this script again without sudo.${NC}"
-        exit 0
+        usermod -aG docker $USER
+        echo -e "${GREEN}Docker group permissions added.${NC}"
     fi
 }
 
@@ -88,10 +86,40 @@ setup_node() {
     echo "$KEYSTORE_PASSWORD" > ~/privasea/config/.password
     chmod 600 ~/privasea/config/.password
     
+    # Buat keystore
     docker run -it -v "$HOME/privasea/config:/app/config" \
     privasea/acceleration-node-beta:latest ./node-calc new_keystore
     
-    echo -e "${GREEN}Node setup completed successfully!${NC}"
+    # Rename keystore file
+    echo -e "\n${BLUE}Renaming keystore file...${NC}"
+    cd ~/privasea/config
+    
+    # Ambil file keystore terbaru
+    LATEST_KEYSTORE=$(ls -t UTC-* | head -n 1)
+    if [ -n "$LATEST_KEYSTORE" ]; then
+        # Hapus wallet_keystore lama jika ada
+        rm -f wallet_keystore
+        
+        # Rename file terbaru ke wallet_keystore
+        mv "$LATEST_KEYSTORE" wallet_keystore
+        echo -e "${GREEN}Latest keystore file renamed to wallet_keystore${NC}"
+        
+        # Hapus file keystore lama
+        echo -e "\n${YELLOW}Cleaning up old keystore files...${NC}"
+        ls UTC-* 2>/dev/null | while read -r file; do
+            rm -f "$file"
+            echo "Removed old keystore: $file"
+        done
+        
+        echo -e "\n${GREEN}Current files in config directory:${NC}"
+        ls -l
+    else
+        echo -e "${RED}No keystore file found!${NC}"
+        return 1
+    fi
+    
+    echo -e "\n${GREEN}Node setup completed successfully!${NC}"
+    echo -e "${YELLOW}Your node address: ${NC}$(echo $LATEST_KEYSTORE | grep -o '[0-9a-f]\{40\}$')"
     read -p "Press Enter to return to menu..."
 }
 
@@ -122,14 +150,36 @@ check_status() {
     clear
     echo -e "\n${YELLOW}[Node Status]${NC}"
     
+    # Cek semua container yang terkait dengan image privasea
+    echo -e "\n${BLUE}Checking all Privanetix containers...${NC}"
+    
+    # Tampilkan semua container (running dan stopped)
+    echo -e "\n${YELLOW}All Containers:${NC}"
+    docker ps -a --filter "ancestor=privasea/acceleration-node-beta:latest"
+    
+    # Cek container yang sedang running
     CONTAINER_ID=$(docker ps -q --filter "ancestor=privasea/acceleration-node-beta:latest")
     if [ -n "$CONTAINER_ID" ]; then
         echo -e "\n${GREEN}Node is running!${NC}"
         echo -e "Container ID: $CONTAINER_ID"
-        echo -e "\nNode logs (press Ctrl+C to exit):"
+        
+        # Tampilkan detail container
+        echo -e "\n${YELLOW}Container Details:${NC}"
+        docker inspect "$CONTAINER_ID" | grep -E "Status|StartedAt|Error"
+        
+        echo -e "\n${YELLOW}Node logs (press Ctrl+C to exit):${NC}"
         docker logs -f "$CONTAINER_ID"
     else
-        echo -e "${RED}Node is not running!${NC}"
+        echo -e "\n${RED}Node is not running!${NC}"
+        
+        # Cek container yang stopped
+        STOPPED_CONTAINER=$(docker ps -aq --filter "ancestor=privasea/acceleration-node-beta:latest" --filter "status=exited")
+        if [ -n "$STOPPED_CONTAINER" ]; then
+            echo -e "\n${YELLOW}Found stopped container. Last logs:${NC}"
+            docker logs "$STOPPED_CONTAINER"
+            echo -e "\n${YELLOW}Container exit reason:${NC}"
+            docker inspect "$STOPPED_CONTAINER" | grep -E "Status|Error"
+        fi
     fi
     
     read -p "Press Enter to return to menu..."
@@ -174,13 +224,6 @@ show_menu() {
         esac
     done
 }
-
-# Check if running as root (prevent sudo usage)
-if [ "$EUID" -eq 0 ]; then 
-    echo -e "${RED}Please do not run as root${NC}"
-    echo "Use: ./privasea.sh"
-    exit 1
-fi
 
 # Start menu
 show_menu
