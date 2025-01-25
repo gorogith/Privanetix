@@ -10,6 +10,13 @@
 
 ## 🚀 Quick Start
 
+Buat folder dan masuk ke direktori
+
+```
+mkdir privasee
+cd privasea
+```
+
 Download script
 ```
 curl -LO https://raw.githubusercontent.com/gorogith/Privanetix/main/privasea.sh
