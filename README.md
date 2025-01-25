@@ -13,7 +13,7 @@
 Buat folder dan masuk ke direktori
 
 ```
-mkdir privasee
+mkdir privasea
 cd privasea
 ```
 
